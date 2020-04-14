@@ -1,5 +1,5 @@
 # RBP Functional Target Predictor using Multiple Peak Callers (RFM)
-Clone the repo: `git clone https://github.com/shuangerli/bio_practicum.git`.
+Clone the repo: `git clone https://github.com/DDochtermann/RBP-Functional-Target-Prediction.git`.
 
 Make the script executable (if necessary): `chmod 755 run.sh`.
 
