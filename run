@@ -1,0 +1,231 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -p RM
+#SBATCH --ntasks-per-node 28
+#SBATCH -t 12:00:00
+
+
+
+if [[ $# == 0 ]]; then
+		printf "Need at least 1 positional argument. Use --help to see instructions."
+		exit 1
+fi
+
+#Rename the forward and reverse for later use
+if [[ $1 == '-h' ]] || [[ $1 == '--help' ]]; then
+	printf "\t-example: Download sample files from ENCODE and run the program. \n"
+	printf "\t-peak: ONLY get the peak calling result from CLAM. Same positional parameters, except no need for Clipper output.\n"
+	printf "\t-user: Parameter 2: rep1_read1, Parameter 3: rep1_read2, Parameter 4: rep2_read1, Parameter 5: rep2_read2, Parameter 6: annotation, Parameter 7: ref genome, Parameter 8: control file, Parameter 9: another peak-caller output .bed file, [OPITONAL] Parameter 10: Another peak-caller output .bed file.\n"
+	exit 0
+fi
+
+#Cutadapt TWO ROUNDS to cut adapters
+trim() {
+	printf "Running cutadapt round 1..."
+	cutadapt -f fastq --match-read-wildcards --times 1 -e 0.1 -O 1 --quality-cutoff 6 -m 18 -a NNNNNAGATCGGAAGAGCACACGTCTGAACTCCAGTCAC -g CTTCCGATCTACAAGTT  -g CTTCCGATCTTGGTCCT -A AACTTGTAGATCGGA -A AGGACCAAGATCGGA -A ACTTGTAGATCGGAA -A GGACCAAGATCGGAA  -A CTTGTAGATCGGAAG  -A GACCAAGATCGGAAG -A TTGTAGATCGGAAGA -A ACCAAGATCGGAAGA -A TGTAGATCGGAAGAG -A CCAAGATCGGAAGAG -A GTAGATCGGAAGAGC -A CAAGATCGGAAGAGC -A TAGATCGGAAGAGCG  -A AAGATCGGAAGAGCG -A AGATCGGAAGAGCGT  -A GATCGGAAGAGCGTC -A ATCGGAAGAGCGTCG -A TCGGAAGAGCGTCGT -A CGGAAGAGCGTCGTG -A GGAAGAGCGTCGTGT -o rep1/reads.R1.trimmed.fastq.gz -p rep1/reads.R2.trimmed.fastq.gz $FILE1 $FILE2 &> /dev/null
+	cutadapt -f fastq --match-read-wildcards --times 1 -e 0.1 -O 1 --quality-cutoff 6 -m 18 -a NNNNNAGATCGGAAGAGCACACGTCTGAACTCCAGTCAC -g CTTCCGATCTACAAGTT  -g CTTCCGATCTTGGTCCT -A AACTTGTAGATCGGA -A AGGACCAAGATCGGA -A ACTTGTAGATCGGAA -A GGACCAAGATCGGAA  -A CTTGTAGATCGGAAG  -A GACCAAGATCGGAAG -A TTGTAGATCGGAAGA -A ACCAAGATCGGAAGA -A TGTAGATCGGAAGAG -A CCAAGATCGGAAGAG -A GTAGATCGGAAGAGC -A CAAGATCGGAAGAGC -A TAGATCGGAAGAGCG  -A AAGATCGGAAGAGCG -A AGATCGGAAGAGCGT  -A GATCGGAAGAGCGTC -A ATCGGAAGAGCGTCG -A TCGGAAGAGCGTCGT -A CGGAAGAGCGTCGTG -A GGAAGAGCGTCGTGT -o rep2/reads.R1.trimmed.fastq.gz -p rep2/reads.R2.trimmed.fastq.gz $FILE3 $FILE4 &> /dev/null
+	printf "Running cutadapt round 2..."
+	cutadapt -f fastq --match-read-wildcards --times 1 -e 0.1 -O 5 --quality-cutoff 6 -m 18 -A AACTTGTAGATCGGA -A AGGACCAAGATCGGA -A ACTTGTAGATCGGAA -A GGACCAAGATCGGAA -A CTTGTAGATCGGAAG -A GACCAAGATCGGAAG -A TTGTAGATCGGAAGA -A ACCAAGATCGGAAGA -A TGTAGATCGGAAGAG -A CCAAGATCGGAAGAG -A GTAGATCGGAAGAGC -A CAAGATCGGAAGAGC -A TAGATCGGAAGAGCG -A AAGATCGGAAGAGCG -A AGATCGGAAGAGCGT -A GATCGGAAGAGCGTC -A ATCGGAAGAGCGTCG -A TCGGAAGAGCGTCGT -A CGGAAGAGCGTCGTG -A GGAAGAGCGTCGTGT -o rep1/reads.R1.trimmed2.fastq.gz -p rep1/reads.R2.trimmed2.fastq.gz rep1/reads.R1.trimmed.fastq.gz rep1/reads.R2.trimmed.fastq.gz &> /dev/null
+	cutadapt -f fastq --match-read-wildcards --times 1 -e 0.1 -O 5 --quality-cutoff 6 -m 18 -A AACTTGTAGATCGGA -A AGGACCAAGATCGGA -A ACTTGTAGATCGGAA -A GGACCAAGATCGGAA -A CTTGTAGATCGGAAG -A GACCAAGATCGGAAG -A TTGTAGATCGGAAGA -A ACCAAGATCGGAAGA -A TGTAGATCGGAAGAG -A CCAAGATCGGAAGAG -A GTAGATCGGAAGAGC -A CAAGATCGGAAGAGC -A TAGATCGGAAGAGCG -A AAGATCGGAAGAGCG -A AGATCGGAAGAGCGT -A GATCGGAAGAGCGTC -A ATCGGAAGAGCGTCG -A TCGGAAGAGCGTCGT -A CGGAAGAGCGTCGTG -A GGAAGAGCGTCGTGT -o rep2/reads.R1.trimmed2.fastq.gz -p rep2/reads.R2.trimmed2.fastq.gz rep2/reads.R1.trimmed.fastq.gz rep2/reads.R2.trimmed.fastq.gz &> /dev/null
+}
+
+#Download example files
+get_sample_file() {
+	mkdir rep1 rep2
+	echo "Downloading Replication 1 Read1..."
+	wget -O rep1/reads.R1.fastq.gz https://www.encodeproject.org/files/ENCFF173ODI/@@download/ENCFF173ODI.fastq.gz &> /dev/null
+	echo "Downloading Replication 1 Read2..."
+	wget -O rep1/reads.R2.fastq.gz https://www.encodeproject.org/files/ENCFF507EGU/@@download/ENCFF507EGU.fastq.gz &> /dev/null
+	echo "Downloading Replication 2 Read1..."
+	wget -O rep2/reads.R1.fastq.gz https://www.encodeproject.org/files/ENCFF578XQC/@@download/ENCFF578XQC.fastq.gz &> /dev/null
+	echo "Downloading Replication 2 Read2..."
+	wget -O rep2/reads.R2.fastq.gz https://www.encodeproject.org/files/ENCFF735QHY/@@download/ENCFF735QHY.fastq.gz &> /dev/null
+	echo "Downloading annotation..."
+	wget -O annotation.gtf.gz ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_33/gencode.v33.primary_assembly.annotation.gtf.gz &> /dev/null
+	echo "Downloading reference genome..."
+	gunzip annotation.gtf.gz
+	wget -O ref.GRCh38.fa.gz ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_33/GRCh38.primary_assembly.genome.fa.gz &> /dev/null
+	gunzip ref.GRCh38.fa.gz
+	echo "Downloading Clipper result..."
+	wget -O clipper.bed.gz https://www.encodeproject.org/files/ENCFF862EKD/@@download/ENCFF862EKD.bed.gz &> /dev/null
+	gunzip clipper.bed.gz
+	echo "Downloading control file..."
+	wget -O control.bam https://www.encodeproject.org/files/ENCFF608WNY/@@download/ENCFF608WNY.bam &> /dev/null
+	echo "All download finished..."
+}
+
+#Prepare reads for UMI
+prep_read_ids() {
+	echo "preparing read ids..."
+	zcat rep1/reads.R1.trimmed2.fastq.gz > rep1/reads.R1.trimmed2.fastq
+	zcat rep1/reads.R2.trimmed2.fastq.gz > rep1/reads.R2.trimmed2.fastq
+	awk -v l=10 'BEGIN{OFS=FS=" "} substr($1, 1, 1) == "@" {print "@" substr($1, (l+3), 500) "_" substr($1, 2, l) " " $2 }; substr($1, 1, 1) != "@" {print}; ' rep1/reads.R1.trimmed2.fastq  | gzip > rep1/reads.R1.trimmed2.bc.fastq.gz
+	awk -v l=10 'BEGIN{OFS=FS=" "} substr($1, 1, 1) == "@" {print "@" substr($1, (l+3), 500) "_" substr($1, 2, l) " " $2 }; substr($1, 1, 1) != "@" {print}; ' rep1/reads.R2.trimmed2.fastq  | gzip > rep1/reads.R2.trimmed2.bc.fastq.gz
+	zcat rep2/reads.R1.trimmed2.fastq.gz > rep2/reads.R1.trimmed2.fastq
+	zcat rep2/reads.R2.trimmed2.fastq.gz > rep2/reads.R2.trimmed2.fastq
+	awk -v l=10 'BEGIN{OFS=FS=" "} substr($1, 1, 1) == "@" {print "@" substr($1, (l+3), 500) "_" substr($1, 2, l) " " $2 }; substr($1, 1, 1) != "@" {print}; ' rep2/reads.R1.trimmed2.fastq  | gzip > rep2/reads.R1.trimmed2.bc.fastq.gz
+	awk -v l=10 'BEGIN{OFS=FS=" "} substr($1, 1, 1) == "@" {print "@" substr($1, (l+3), 500) "_" substr($1, 2, l) " " $2 }; substr($1, 1, 1) != "@" {print}; ' rep2/reads.R2.trimmed2.fastq  | gzip > rep2/reads.R2.trimmed2.bc.fastq.gz
+}
+
+#Read mapping with STAR
+read_map_star() {
+	echo "Read mapping with star..."
+	mkdir genome_index
+	STAR --runThreadN 10 --runMode genomeGenerate --genomeDir genome_index/ --genomeFastaFiles $REF --sjdbGTFfile $ANNO --sjdbOverhang 49
+	mkdir -p rep1/STAR
+	STAR --outSAMtype BAM SortedByCoordinate --runThreadN 10 --genomeDir genome_index/ --readFilesIn rep1/reads.R1.trimmed2.bc.fastq.gz rep1/reads.R2.trimmed2.bc.fastq.gz --readFilesCommand  zcat --outFilterType BySJout --outFilterMultimapNmax 1 --alignSJoverhangMin 8 --alignSJDBoverhangMin 1 --outFilterMismatchNmax 999 --outFilterMismatchNoverLmax 0.04 --scoreDelOpen -1 --alignIntronMin 20 --alignIntronMax 1000000 --alignMatesGapMax 1000000 --outFileNamePrefix rep1/STAR/ --alignEndsType EndToEnd
+	mkdir -p rep2/STAR
+	STAR --outSAMtype BAM SortedByCoordinate --runThreadN 10 --genomeDir genome_index/ --readFilesIn rep2/reads.R1.trimmed2.bc.fastq.gz rep2/reads.R2.trimmed2.bc.fastq.gz --readFilesCommand  zcat --outFilterType BySJout --outFilterMultimapNmax 1 --alignSJoverhangMin 8 --alignSJDBoverhangMin 1 --outFilterMismatchNmax 999 --outFilterMismatchNoverLmax 0.04 --scoreDelOpen -1 --alignIntronMin 20 --alignIntronMax 1000000 --alignMatesGapMax 1000000 --outFileNamePrefix rep2/STAR/ --alignEndsType EndToEnd
+}
+
+#samtools filtering
+samtools_filter() {
+	samtools index rep1/STAR/Aligned.sortedByCoord.out.bam
+	samtools view -hb -f 2 rep1/STAR/Aligned.sortedByCoord.out.bam -o rep1/aligned.f.bam chr1:1 chr2:1 chr3:1 chr4:1 chr5:1 chr6:1 chr7:1 chr8:1 chr9:1 chr10:1 chr11:1 chr12:1 chr13:1 chr14:1 chr15:1 chr16:1 chr17:1 chr18:1 chr19:1 chr20:1 chr21:1 chr22:1 chrX:1 chrY:1
+	samtools index rep1/aligned.f.bam
+	samtools index rep2/STAR/Aligned.sortedByCoord.out.bam
+	samtools view -hb -f 2 rep2/STAR/Aligned.sortedByCoord.out.bam -o rep2/aligned.f.bam chr1:1 chr2:1 chr3:1 chr4:1 chr5:1 chr6:1 chr7:1 chr8:1 chr9:1 chr10:1 chr11:1 chr12:1 chr13:1 chr14:1 chr15:1 chr16:1 chr17:1 chr18:1 chr19:1 chr20:1 chr21:1 chr22:1 chrX:1 chrY:1
+	samtools index rep2/aligned.f.bam
+}
+
+#PCR duplicate removal using UMI
+pcr_dup_rem() {
+	echo "Removing PCR duplicates..."
+	umi_tools dedup -I rep1/aligned.f.bam --paired -S rep1/aligned.f.duplRm.bam
+	umi_tools dedup -I rep2/aligned.f.bam --paired -S rep2/aligned.f.duplRm.bam
+}
+
+#Quality control
+qc() {
+	mkdir fastqc_result
+	echo "Quality checking..."
+	fastqc -o fastqc_result/ narrow_peak.combined.bed
+	echo "Quality checking complete. You can see it at fastqc_result/"
+}
+
+clam() {
+	echo "Peak calling with CLAM..."
+	CLAM realigner -i $CONTROL -o ./control/ --read-tagger-method start --retag --strandness opposite
+	CLAM realigner -i aligned.f.duplRm.rep1.bam -o ./rep1/ ----read-tagger-method start --retag  --strandness opposite
+	CLAM realigner -i aligned.f.duplRm.rep2.bam -o ./rep2/ --read-tagger-method start --retag  --strandness opposite
+	CLAM peakcaller -i rep1/unique.sorted.bam,rep2/unique.sorted.bam rep1/realigned.sorted.bam,rep2/realigned.sorted.bam -c control/unique.sorted.bam control/realigned.sorted.bam -o peak --unstranded --binsize 100 --unstranded --gtf $ANNO
+}
+
+intersection() {
+	echo "Generating intersection of peak calling results..."
+	bedtools intersect -a narrow_peak.combined.bed -b $PEAKCALLERONE >intersect.bed
+}
+
+intersectionthree() {
+	echo "Generating intersection of peak calling results..."
+	bedtools intersect -a narrow_peak.combined.bed -b $PEAKCALLERONE -c $PEAKCALLERTWO >intersect.bed
+}
+
+pras() {
+	echo "scoring RBP with PRAS..."
+	python src/script/PRAS_1.0.py -g $ANNO -t example_data/IDs.txt -i intersect.bed -m check -s transcript -a Output.txt -w 10 -c 500 -p OutData
+	python src/PRASScore.py
+	bash ScoreCommand.txt
+	echo "binding_PRAS.txt contains result."
+	echo "finished :)"
+}
+
+
+#Load all module required
+module load cutadapt/1.16
+module load samtools/0.1.19
+module load fastqc
+module load staraligner/2.5.2b
+module load bedtools
+
+if [[ $1 == '-example' ]]; then
+	echo "Will download sample file and run the whole script."
+	get_sample_file
+	FILE1=rep1/reads.R1.fastq.gz
+	FILE2=rep1/reads.R2.fastq.gz
+	FILE3=rep2/reads.R1.fastq.gz
+	FILE4=rep2/reads.R2.fastq.gz
+	ANNO=annotation.gtf
+	REF=ref.GRCh38.fa
+	PEAKCALLERONE=clipper.bed
+	CONTROL=control.bam
+	trim
+	prep_read_ids
+	read_map_star
+	samtools_filter
+	pcr_dup_rem
+	clam
+	intersection
+	pras
+	exit 0
+fi
+
+if [[ $1 == '-peak' ]]; then
+	echo "Using user provided info. Output is narrow_peak.combined.bed."
+	FILE1=$2
+	FILE2=$3
+	FILE3=$4
+	FILE4=$5
+	ANNO=$6
+	REF=$7
+	CONTROL=$8
+	mkdir rep1
+	mkdir rep2
+	trim
+	prep_read_ids
+	read_map_star
+	samtools_filter
+	pcr_dup_rem
+	clam
+	qc
+	exit 0
+fi
+
+if [[ $1 == '-user' ]] && [[ $# == 9 ]]; then
+	echo "Using user provided info."
+	FILE1=$2
+	FILE2=$3
+	FILE3=$4
+	FILE4=$5
+	ANNO=$6
+	REF=$7
+	CONTROL=$8
+	PEAKCALLERONE=$9
+	mkdir rep1
+	mkdir rep2
+	trim
+	prep_read_ids
+	read_map_star
+	samtools_filter
+	pcr_dup_rem
+	clam
+	qc
+	intersection
+	pras
+	exit 0
+fi
+
+if [[ $1 == '-user' ]] && [[ $# == 10 ]]; then
+	echo "Using user provided info."
+	FILE1=$2
+	FILE2=$3
+	FILE3=$4
+	FILE4=$5
+	ANNO=$6
+	REF=$7
+	CONTROL=$8
+	PEAKCALLERONE=$9
+	PEAKCALLERTWO=${10}
+	mkdir rep1
+	mkdir rep2
+	trim
+	prep_read_ids
+	read_map_star
+	samtools_filter
+	pcr_dup_rem
+	clam
+	qc
+	intersectionthree
+	pras
+	exit 0
+fi
